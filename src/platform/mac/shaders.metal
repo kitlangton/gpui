@@ -34,6 +34,8 @@ float blur_along_x(float x, float y, float sigma, float corner,
                    float2 half_size);
 float4 over(float4 below, float4 above);
 float radians(float degrees);
+float ign(float2 p);
+float dither_triangular(float2 pos);
 float4 fill_color(Background background, float2 position, Bounds_ScaledPixels bounds,
   float4 solid_color, float4 color0, float4 color1);
 
@@ -536,6 +538,7 @@ fragment float4 shadow_fragment(ShadowFragmentInput input [[stage_in]],
                gaussian(y, shadow.blur_radius) * step;
       y += step;
     }
+    alpha = saturate(alpha + dither_triangular(input.position.xy) * smoothstep(0.0, 0.02, alpha) * smoothstep(1.0, 0.98, alpha));
   }
 
   return input.color * float4(1., 1., 1., alpha);
@@ -1164,6 +1167,15 @@ float2x2 rotate2d(float angle) {
     return float2x2(c, -s, s, c);
 }
 
+// Interleaved gradient noise (Jimenez), triangular PDF via two taps, +-1/255 amplitude.
+float ign(float2 p) {
+    return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+float dither_triangular(float2 pos) {
+    return (ign(pos) + ign(pos + 5.588238) - 1.0) * (1.0 / 255.0);
+}
+
 float4 fill_color(Background background,
                       float2 position,
                       Bounds_ScaledPixels bounds,
@@ -1215,6 +1227,7 @@ float4 fill_color(Background background,
           break;
         }
       }
+      color.rgb = saturate(color.rgb + dither_triangular(position));
       break;
     }
     case 2: {

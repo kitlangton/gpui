@@ -216,6 +216,10 @@ mod sys {
         pub fn CVDisplayLinkCreateWithActiveCGDisplays(
             display_link_out: *mut *mut CVDisplayLink,
         ) -> i32;
+        pub fn CVDisplayLinkCreateWithCGDisplay(
+            display_id: u32,
+            display_link_out: *mut *mut CVDisplayLink,
+        ) -> i32;
         pub fn CVDisplayLinkSetCurrentCGDisplay(
             display_link: &mut DisplayLinkRef,
             display_id: u32,
@@ -241,7 +245,10 @@ mod sys {
             unsafe {
                 let mut display_link: *mut CVDisplayLink = 0 as _;
 
-                let code = CVDisplayLinkCreateWithActiveCGDisplays(&mut display_link);
+                let mut code = CVDisplayLinkCreateWithActiveCGDisplays(&mut display_link);
+                if code != 0 {
+                    code = CVDisplayLinkCreateWithCGDisplay(display_id, &mut display_link);
+                }
                 anyhow::ensure!(code == 0, "could not create display link, code: {}", code);
 
                 let mut display_link = DisplayLink::from_ptr(display_link);

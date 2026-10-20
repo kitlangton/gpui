@@ -145,6 +145,11 @@ impl MetalRenderer {
         layer.set_opaque(false);
         layer.set_maximum_drawable_count(3);
         unsafe {
+            if let Some(color_space) = core_graphics::color_space::CGColorSpace::create_with_name(
+                core_graphics::color_space::kCGColorSpaceSRGB,
+            ) {
+                let _: () = msg_send![&*layer, setColorspace: color_space.as_ptr()];
+            }
             let _: () = msg_send![&*layer, setAllowsNextDrawableTimeout: NO];
             let _: () = msg_send![&*layer, setNeedsDisplayOnBoundsChange: YES];
             let _: () = msg_send![

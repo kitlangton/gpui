@@ -589,6 +589,9 @@ pub(crate) trait PlatformTextSystem: Send + Sync {
         raster_bounds: Bounds<DevicePixels>,
     ) -> Result<(Size<DevicePixels>, Vec<u8>)>;
     fn layout_line(&self, text: &str, font_size: Pixels, runs: &[FontRun]) -> LineLayout;
+    fn glyph_dilation_for_color(&self, _color: crate::Hsla) -> u8 {
+        0
+    }
 }
 
 pub(crate) struct NoopTextSystem;

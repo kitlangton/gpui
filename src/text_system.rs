@@ -326,6 +326,10 @@ impl TextSystem {
         self.platform_text_system
             .rasterize_glyph(params, raster_bounds)
     }
+
+    pub(crate) fn glyph_dilation_for_color(&self, color: Hsla) -> u8 {
+        self.platform_text_system.glyph_dilation_for_color(color)
+    }
 }
 
 /// The GPUI text layout subsystem.
@@ -767,6 +771,7 @@ pub(crate) struct RenderGlyphParams {
     pub(crate) subpixel_variant: Point<u8>,
     pub(crate) scale_factor: f32,
     pub(crate) is_emoji: bool,
+    pub(crate) dilation: u8,
 }
 
 impl Eq for RenderGlyphParams {}
@@ -779,6 +784,7 @@ impl Hash for RenderGlyphParams {
         self.subpixel_variant.hash(state);
         self.scale_factor.to_bits().hash(state);
         self.is_emoji.hash(state);
+        self.dilation.hash(state);
     }
 }
 

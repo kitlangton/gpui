@@ -56,6 +56,7 @@ const WINDOW_STATE_IVAR: &str = "windowState";
 
 static mut WINDOW_CLASS: *const Class = ptr::null();
 static mut PANEL_CLASS: *const Class = ptr::null();
+static mut NON_KEY_PANEL_CLASS: *const Class = ptr::null();
 static mut VIEW_CLASS: *const Class = ptr::null();
 static mut BLURRED_VIEW_CLASS: *const Class = ptr::null();
 
@@ -105,8 +106,9 @@ unsafe extern "C" {
 #[ctor]
 unsafe fn build_classes() {
     unsafe {
-        WINDOW_CLASS = build_window_class("GPUIWindow", class!(NSWindow));
-        PANEL_CLASS = build_window_class("GPUIPanel", class!(NSPanel));
+        WINDOW_CLASS = build_window_class("GPUIWindow", class!(NSWindow), true);
+        PANEL_CLASS = build_window_class("GPUIPanel", class!(NSPanel), true);
+        NON_KEY_PANEL_CLASS = build_window_class("GPUINonKeyPanel", class!(NSPanel), false);
         VIEW_CLASS = {
             let mut decl = ClassDecl::new("GPUIView", class!(NSView)).unwrap();
             decl.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR);
@@ -277,7 +279,11 @@ pub(crate) fn convert_mouse_position(position: NSPoint, window_height: Pixels) -
     )
 }
 
-unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const Class {
+unsafe fn build_window_class(
+    name: &'static str,
+    superclass: &Class,
+    can_become_key: bool,
+) -> *const Class {
     unsafe {
         let mut decl = ClassDecl::new(name, superclass).unwrap();
         decl.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR);
@@ -289,7 +295,11 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
         );
         decl.add_method(
             sel!(canBecomeKeyWindow),
-            yes as extern "C" fn(&Object, Sel) -> BOOL,
+            if can_become_key {
+                yes as extern "C" fn(&Object, Sel) -> BOOL
+            } else {
+                no as extern "C" fn(&Object, Sel) -> BOOL
+            },
         );
         decl.add_method(
             sel!(windowDidResize:),
@@ -619,6 +629,12 @@ impl MacWindow {
 
             let native_window: id = match kind {
                 WindowKind::Normal | WindowKind::Floating => msg_send![WINDOW_CLASS, alloc],
+                // A pop-up opened without focus never takes key status, so
+                // clicking it leaves keyboard focus in the frontmost app.
+                WindowKind::PopUp if !focus => {
+                    style_mask |= NSWindowStyleMaskNonactivatingPanel;
+                    msg_send![NON_KEY_PANEL_CLASS, alloc]
+                }
                 WindowKind::PopUp => {
                     style_mask |= NSWindowStyleMaskNonactivatingPanel;
                     msg_send![PANEL_CLASS, alloc]
@@ -1606,6 +1622,10 @@ extern "C" fn yes(_: &Object, _: Sel) -> BOOL {
     YES
 }
 
+extern "C" fn no(_: &Object, _: Sel) -> BOOL {
+    NO
+}
+
 extern "C" fn dealloc_window(this: &Object, _: Sel) {
     unsafe {
         drop_window_state(this);
@@ -1987,11 +2007,16 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
     // The following code detects the spurious event and invokes `resignKeyWindow`:
     // in theory, we're not supposed to invoke this method manually but it balances out
     // the spurious `becomeKeyWindow` event and helps us work around that bug.
+    //
+    // `resignKeyWindow` synchronously posts `windowDidResignKey:` back into this
+    // function for the same window, so the state lock must be released first.
     if selector == sel!(windowDidBecomeKey:) && !is_active {
+        let native_window = lock.native_window;
+        drop(lock);
         unsafe {
-            let _: () = msg_send![lock.native_window, resignKeyWindow];
-            return;
+            let _: () = msg_send![native_window, resignKeyWindow];
         }
+        return;
     }
 
     let executor = lock.executor.clone();
